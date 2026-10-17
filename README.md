@@ -59,6 +59,35 @@ Caveats:
 - The per-key group-by report (`/global/spend/report`) needs an enterprise licence. Tags and the key/log endpoints do not.
 - The raw request log lives in Postgres, so it can also be queried directly or exported.
 
+## Keyless engines with rotating IPs (optional)
+
+Many keyless engines (DuckDuckGo, Brave, Google...) throttle or block a single datacenter address.
+[SearXNG](https://github.com/searxng/searxng) queries them for you and can rotate its outgoing proxy per request.
+It runs as its own container next to LiteLLM, not inside it; LiteLLM talks to it through its built-in `searxng` provider,
+so it takes part in pools, fallbacks and per-instance auth like any other search tool.
+
+```bash
+cp config/searxng/settings.yml.example config/searxng/settings.yml   # list your SOCKS/HTTP proxies
+docker compose --profile keyless up -d
+```
+
+Then add a tool and put it in a pool (it has no key and no monthly quota, so it works as an "unlimited" entry):
+
+```yaml
+# litellm.config.yaml
+search_tools:
+  - search_tool_name: searxng-keyless
+    litellm_params: {search_provider: searxng, api_base: "http://searxng:8080"}
+# quota_pools.yaml: put it after the free keys, before the paid one
+#   - {tool: searxng-keyless}
+```
+
+Measured (`tests/searxng/run.sh`): requests rotate evenly over the proxy list (24 searches, 3 proxies: 8 each), and a proxy
+that is down when SearXNG starts is skipped by retries. **Limits:** SearXNG has no proxy health checks. A proxy that dies
+and then hangs makes every search that lands on it fail after the timeout until you remove it from the list; check your
+proxies regularly. Results quality differs from API providers, and engines still block individual proxy addresses.
+SearXNG refuses plain-`http` targets unless an engine sets `enable_http: true` (real engines use https).
+
 ## Adding a search engine LiteLLM does not support
 
 LiteLLM ships with about 17 search providers. For anything else, run a tiny service that speaks the

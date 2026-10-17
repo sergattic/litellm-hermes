@@ -6,3 +6,5 @@ data/
 *.bak*
 __pycache__/
 .pytest_cache/
+config/searxng/settings.yml
+config/searxng/proxies*

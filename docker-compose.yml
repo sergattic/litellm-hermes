@@ -47,6 +47,21 @@ services:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
 
+  # Optional keyless search engines with rotating outgoing IPs. Start with: docker compose --profile keyless up -d
+  # Needs config/searxng/settings.yml (copy settings.yml.example and list your proxies). See README.
+  searxng:
+    profiles: ["keyless"]
+    image: ${SEARXNG_IMAGE:-searxng/searxng:2026.10.17-1c10abe2d}
+    restart: unless-stopped
+    volumes:
+      - ./config/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    # No published port: only LiteLLM (same compose network) talks to it, at http://searxng:8080
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
 volumes:
   litellm-pgdata:
   litellm-quota:

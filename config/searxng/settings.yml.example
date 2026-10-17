@@ -1,0 +1,19 @@
+# Copy to settings.yml (gitignored) and list YOUR proxies. SearXNG asks the engines keyless, and rotates the
+# outgoing proxy per request (round-robin, verified in tests/searxng/run.sh).
+use_default_settings: true
+server:
+  secret_key: "change-me-openssl-rand-hex-32"
+  limiter: false                 # LiteLLM is the only client, on a private network
+  bind_address: "0.0.0.0"
+  port: 8080
+search:
+  formats: [html, json]          # json is what LiteLLM's searxng provider uses
+outgoing:
+  request_timeout: 6
+  retries: 2                     # a failed request moves to the next proxy
+  proxies:
+    all://:
+      - socks5h://proxy-1.example:1080      # socks5h = DNS resolved at the proxy
+      - socks5h://user:pass@proxy-2.example:1080
+      - http://proxy-3.example:3128
+  # source_ips: [203.0.113.10, 203.0.113.11]   # alternative: rotate local addresses on a multi-IP host

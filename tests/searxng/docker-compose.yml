@@ -1,0 +1,20 @@
+networks:
+  sx: {ipam: {config: [{subnet: 172.29.77.0/24}]}}
+services:
+  echo:
+    image: python:3.12-slim
+    command: python /echo.py
+    volumes: [./echo.py:/echo.py:ro]
+    networks: {sx: {ipv4_address: 172.29.77.10}}
+  socks1: &socks
+    image: python:3.12-slim
+    command: python /socks5.py
+    volumes: [./socks5.py:/socks5.py:ro]
+    networks: [sx]
+  socks2: *socks
+  socks3: *socks
+  searxng:
+    image: ${SEARXNG_IMAGE:-searxng/searxng:2026.10.17-1c10abe2d}
+    volumes: [./settings.yml:/etc/searxng/settings.yml:ro]
+    ports: ["127.0.0.1:${SEARXNG_TEST_PORT:-8099}:8080"]
+    networks: [sx]

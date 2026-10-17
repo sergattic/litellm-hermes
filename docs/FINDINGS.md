@@ -14,6 +14,17 @@ Measured with throwaway containers and fake search backends, not taken from docu
 | Providers built in | brave, dataforseo, duckduckgo, exa_ai, fastcrw, firecrawl, google_pse, linkup, parallel_ai, perplexity, searchapi, searxng, serper, tavily, you_com, apiserpent, tinyfish. No SerpApi, Zyte, Diffbot, ScrapingBee, Supadata or Scrape Creators. |
 | Extraction | No endpoint for it. |
 
+## SearXNG with rotating proxies (v2026.10.17)
+
+| Question | Result |
+|---|---|
+| Does it rotate the outgoing proxy | **Yes**, per request, round-robin (`itertools.cycle` in `searx/network/network.py`). Test: 24 searches over 3 SOCKS proxies, each with its own address: 8 each. It also has `outgoing.source_ips` for hosts with several local addresses. |
+| SOCKS and HTTP proxies | Both work (`socks5h://` tested). |
+| A proxy that is down from the start | Fast failure; with `retries: 2` all 12 searches succeeded through the others. |
+| A proxy that dies after use and then hangs | **Not handled**: requests that reach it wait for the timeout and fail (about every other search in the test) and the engine is marked `Suspended`. No health checking or ejection. |
+| Plain `http://` targets | Refused unless the engine sets `enable_http: true` (cost me an hour; real engines use https). |
+| Real keyless engines from a single datacenter address | Bing, Mojeek, Startpage and Yahoo answered; DuckDuckGo gave a CAPTCHA, Brave rate-limited (too many requests), Google and Qwant answered access denied. This is what rotating addresses is meant to improve (not tested with real rotating proxies). |
+
 ## Not yet verified
 
 - Behaviour with real provider keys (everything above used fake backends).

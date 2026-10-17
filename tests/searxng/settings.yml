@@ -1,0 +1,23 @@
+# Test settings: SearXNG rotates through three SOCKS proxies and retries on the next one when a proxy fails.
+use_default_settings: true
+server: {secret_key: "test-only-not-secret", limiter: false, bind_address: "0.0.0.0", port: 8080}
+search: {formats: [html, json]}
+outgoing:
+  request_timeout: 4
+  retries: 2
+  proxies:
+    all://:
+      - socks5h://socks1:1080
+      - socks5h://socks2:1080
+      - socks5h://socks3:1080
+engines:
+  - name: echo
+    engine: json_engine
+    search_url: http://172.29.77.10:8000/?q={query}
+    results_query: results
+    url_query: url
+    title_query: title
+    content_query: content
+    shortcut: echo
+    enable_http: true      # SearXNG refuses plain http targets unless the engine opts in; real engines use https
+    disabled: false
