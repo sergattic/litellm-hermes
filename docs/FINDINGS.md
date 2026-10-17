@@ -22,6 +22,7 @@ Measured with throwaway containers and fake search backends, not taken from docu
 | SOCKS and HTTP proxies | Both work (`socks5h://` tested). |
 | A proxy that is down from the start | Fast failure; with `retries: 2` all 12 searches succeeded through the others. |
 | A proxy that dies after use and then hangs | **Not handled**: requests that reach it wait for the timeout and fail (about every other search in the test) and the engine is marked `Suspended`. No health checking or ejection. |
+| Different proxy groups per engine | **Yes.** An engine's own `network:` block (with `proxies`) replaces the global list for that engine only. Test: engine A exits only through proxy 1, engine B rotates only over proxies 2 and 3. A custom `network` block also replaces the engine-level `enable_http`. |
 | Plain `http://` targets | Refused unless the engine sets `enable_http: true` (cost me an hour; real engines use https). |
 | Real keyless engines from a single datacenter address | Bing, Mojeek, Startpage and Yahoo answered; DuckDuckGo gave a CAPTCHA, Brave rate-limited (too many requests), Google and Qwant answered access denied. This is what rotating addresses is meant to improve (not tested with real rotating proxies). |
 

@@ -82,6 +82,12 @@ search_tools:
 #   - {tool: searxng-keyless}
 ```
 
+**Different proxies for different engines.** Give an engine its own `network:` block with its own `proxies` list (see
+`config/searxng/settings.yml.example`): that engine uses only those proxies, everything else keeps the global list. This lets you
+spend scarce residential proxies only on the engines that block datacenter addresses (Google, DuckDuckGo) and use cheap or home
+proxies for the rest. Note: a custom `network` block replaces the engine-level settings, so repeat `enable_http: true` inside it
+if you ever point an engine at a plain-http target (real engines use https and do not need it).
+
 Measured (`tests/searxng/run.sh`): requests rotate evenly over the proxy list (24 searches, 3 proxies: 8 each), and a proxy
 that is down when SearXNG starts is skipped by retries. **Limits:** SearXNG has no proxy health checks. A proxy that dies
 and then hangs makes every search that lands on it fail after the timeout until you remove it from the list; check your

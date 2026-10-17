@@ -12,6 +12,12 @@ r=json.load(sys.stdin);res=r.get("results",[]);print(res[0]["content"] if res el
 check() { if [ "$2" = "$3" ]; then echo "PASS $1"; else echo "FAIL $1: expected [$3] got [$2]"; fails=$((fails+1)); fi; }
 n=$(seen 24 a | tr ' ' '\n' | grep -c '^8x172')
 check "24 searches spread evenly over 3 proxies (8 each)" "$n" "3"
+# Per-engine proxy groups: engine echo-a may only use proxy 1 (.11), engine echo-b only proxies 2 and 3 (.12/.13).
+ips() { for i in $(seq 1 $1); do curl -s -m 30 "http://127.0.0.1:$PORT/search?q=$3$i&format=json&engines=$2" | python3 -c 'import sys,json
+r=json.load(sys.stdin);res=r.get("results",[]);print(res[0]["content"] if res else "NORESULT")'; done | sort -u | tr '\n' ' '; }
+check "engine echo-a only ever exits through its own group (proxy 1)" "$(ips 10 echo-a g1)" "172.29.77.11 "
+check "engine echo-b rotates only inside its group (proxies 2 and 3)" "$(ips 10 echo-b g2)" "172.29.77.12 172.29.77.13 "
+
 # A proxy that is already down when SearXNG starts fails fast, and retries move the request to the next proxy.
 # (A proxy that dies AFTER use and then hangs is NOT covered: those requests wait for the timeout and fail until
 # the proxy is removed. See docs/FINDINGS.md. SearXNG has no proxy health checking.)

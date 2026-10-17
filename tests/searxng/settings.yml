@@ -21,3 +21,30 @@ engines:
     shortcut: echo
     enable_http: true      # SearXNG refuses plain http targets unless the engine opts in; real engines use https
     disabled: false
+  # Per-engine proxy groups: an engine's own `network` replaces the global proxy list for that engine only.
+  - name: echo-a            # group A: proxy 1 only
+    engine: json_engine
+    search_url: http://172.29.77.10:8000/?q={query}
+    results_query: results
+    url_query: url
+    title_query: title
+    content_query: content
+    shortcut: ea
+    enable_http: true
+    network:
+      enable_http: true       # must be repeated here: a custom network block replaces the engine-level setting
+      proxies:
+        all://: [socks5h://socks1:1080]
+  - name: echo-b            # group B: proxies 2 and 3
+    engine: json_engine
+    search_url: http://172.29.77.10:8000/?q={query}
+    results_query: results
+    url_query: url
+    title_query: title
+    content_query: content
+    shortcut: eb
+    enable_http: true
+    network:
+      enable_http: true       # must be repeated here: a custom network block replaces the engine-level setting
+      proxies:
+        all://: [socks5h://socks2:1080, socks5h://socks3:1080]

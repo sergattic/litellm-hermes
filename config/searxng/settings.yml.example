@@ -17,3 +17,22 @@ outgoing:
       - socks5h://user:pass@proxy-2.example:1080
       - http://proxy-3.example:3128
   # source_ips: [203.0.113.10, 203.0.113.11]   # alternative: rotate local addresses on a multi-IP host
+
+# Different proxy groups per engine (verified in tests/searxng/run.sh). An engine with its own `network` block uses ONLY
+# that proxy list; every other engine keeps the global list above. Typical split: cheap datacenter proxies for tolerant
+# engines (the global list), residential proxies only for the engines that block datacenter addresses.
+engines:
+  - name: google
+    network:
+      retries: 2
+      proxies:
+        all://:
+          - socks5h://user:pass@residential-1.example:1080
+          - socks5h://user:pass@residential-2.example:1080
+  - name: duckduckgo
+    network:
+      retries: 2
+      proxies:
+        all://:
+          - socks5h://user:pass@residential-1.example:1080
+          - socks5h://user:pass@residential-2.example:1080
