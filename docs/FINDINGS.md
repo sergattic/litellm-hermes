@@ -1,5 +1,7 @@
 # Findings (LiteLLM v1.103.0)
 
+Correction (verified in production): in `GET /spend/logs`, a request served by a fallback tool is logged with `model_group` = the tool it was first sent to. Per-tool attempts are therefore taken from the failure/success events (`standard_logging_object.model_group`, correct per attempt) into `quota_router.usage`.
+
 Measured with throwaway containers and fake search backends, not taken from documentation.
 
 | Question | Result |

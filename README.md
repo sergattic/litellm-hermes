@@ -52,7 +52,7 @@ With the database enabled (it is, in `docker-compose.yml`) LiteLLM records every
 | You want | Where |
 |---|---|
 | Spend and calls per **Hermes instance** | One virtual key per instance. `GET /key/info?key=...` (field `spend`), or the admin UI (Virtual Keys, Logs). |
-| Calls and spend per **upstream key** (free-1, free-2, paid) | Each row in `GET /spend/logs` (and the Logs page in the UI) shows the tool that served the call as `model_group`. Calls per pool: `GET /spend/tags` (tag `search-pool:<pool>`). |
+| Calls per **upstream key** (free-1, free-2, paid) | Postgres table `quota_router.usage`: every real attempt is counted for the tool that made it, fallbacks included. LiteLLM's own spend log is per request and, for a request served by a fallback, still names the tool it was first sent to (the actual provider is in `custom_llm_provider`). Calls per pool: `GET /spend/tags` (tag `search-pool:<pool>`). |
 | Which keys are exhausted this month, and how many calls each took | Postgres table `quota_router.usage` (`calls`, `exhausted`, `marked_at` per tool and month). |
 
 Caveats:
