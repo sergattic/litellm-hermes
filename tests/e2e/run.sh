@@ -12,14 +12,17 @@ check() { if [ "$2" = "$3" ]; then echo "PASS $1"; else echo "FAIL $1: expected 
 
 codes=""; for i in $(seq 1 12); do codes="$codes$(search ordered) "; done
 check "ordered: all 12 requests succeed" "$(echo $codes | tr ' ' '\n' | sort -u | tr '\n' ' ')" "200 "
-h=$(count); a=$(echo "$h" | python3 -c 'import sys,json;h=json.load(sys.stdin);print(h.get("9001",0),h.get("9002",0),h.get("9004",0))')
-check "ordered: free-a x5, free-b x5, paid x2" "$a" "5 5 2"
+a=$(count | python3 -c 'import sys,json;h=json.load(sys.stdin);print(h.get("9001",0),h.get("9002",0),h.get("9004",0))')
+check "ordered: free-a 5 ok + 1 quota error, free-b 5 ok + 1 quota error, paid x2 (each exhausted tool is skipped afterwards)" "$a" "6 6 2"
 
-c1=$(search broken); h1=$(count | python3 -c 'import sys,json;print(json.load(sys.stdin).get("9003",0))')
-check "broken: first call succeeds through fallback" "$c1" "200"
-c2=$(search broken); c3=$(search broken); h3=$(count | python3 -c 'import sys,json;print(json.load(sys.stdin).get("9003",0))')
-check "broken: later calls skip the exhausted tool (9003 hit once)" "$c2 $c3 $h3" "200 200 1"
-rows=$(docker compose -p $P exec -T db psql -U l -d l -Atc "select tool||'='||used from quota_router.usage order by tool" 2>/dev/null | tr '\n' ' ')
-check "quota counters are stored in Postgres (schema quota_router)" "$rows" "bad=1 free-a=5 free-b=5 good=2 paid=2 "
+c1=$(search broken); c2=$(search broken); c3=$(search broken); h=$(count | python3 -c 'import sys,json;print(json.load(sys.stdin).get("9003",0))')
+check "broken: falls through to the next tool and never hits the exhausted one again (9003 hit once)" "$c1 $c2 $c3 $h" "200 200 200 1"
+
+f=""; for i in 1 2 3; do f="$f$(search flaky) "; done; h=$(count | python3 -c 'import sys,json;print(json.load(sys.stdin).get("9006",0))')
+check "flaky: a non-quota failure moves on every time and never marks the tool (9006 hit 3 times)" "$f$h" "200 200 200 3"
+
+sleep 3
+rows=$(docker compose -p $P exec -T db psql -U l -d l -Atc "select tool||'='||calls||'/'||case when exhausted then 'exhausted' else 'ok' end from quota_router.usage order by tool" 2>/dev/null | tr '\n' ' ')
+check "Postgres holds calls and exhausted flags per tool" "$rows" "bad=1/exhausted flaky=3/ok free-a=6/exhausted free-b=6/exhausted good=6/ok paid=2/ok "
 [ "$fails" = 0 ] && echo "ALL PASSED" || echo "$fails FAILED"
 exit $fails

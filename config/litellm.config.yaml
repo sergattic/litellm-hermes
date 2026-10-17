@@ -7,7 +7,8 @@ general_settings:
 litellm_settings:
   callbacks: quota_router.quota_router   # free-first routing, see callbacks/quota_router.py
 
-# One tool per key, each with a UNIQUE name. Clients call the pool name from quota_pools.yaml.
+# One tool per key, each with a UNIQUE name. Clients call the pool name from quota_pools.yaml; the hook orders the tools
+# and sets the per-request fallbacks, so no router fallbacks are needed here.
 search_tools:
   - search_tool_name: tavily-free-1
     litellm_params: {search_provider: tavily, api_key: os.environ/TAVILY_API_KEY_1}
@@ -15,10 +16,3 @@ search_tools:
     litellm_params: {search_provider: tavily, api_key: os.environ/TAVILY_API_KEY_2}
   - search_tool_name: exa-paid
     litellm_params: {search_provider: exa_ai, api_key: os.environ/EXA_API_KEY}
-
-# Move a request to the next tool in the same call when one fails (quota, outage).
-# Keep in sync with quota_pools.yaml: `python scripts/gen_fallbacks.py` prints the block.
-router_settings:
-  fallbacks:
-    - {tavily-free-1: [tavily-free-2, exa-paid]}
-    - {tavily-free-2: [exa-paid]}

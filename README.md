@@ -2,7 +2,7 @@
 
 A portable [LiteLLM](https://github.com/BerriAI/litellm) gateway for a fleet of [Hermes](https://github.com/NousResearch/hermes-agent) agents.
 One URL and one auth for every Hermes instance, many provider keys behind it, and
-**free-tier keys used first** with monthly quotas, so adding a feature means changing one place instead of every agent.
+**free-tier keys used first** (the ladder of the `resilient-search` plugin, run once), so adding a feature means changing one place instead of every agent.
 
 No secrets in this repo: keys live in `.env` (gitignored) and are referenced from the config as `os.environ/NAME`.
 
@@ -11,10 +11,9 @@ No secrets in this repo: keys live in `.env` (gitignored) and are referenced fro
 | Piece | What it does |
 |---|---|
 | `docker-compose.yml` | LiteLLM + its own Postgres (virtual keys, spend tracking). Binds to loopback; nothing host-specific. |
-| `callbacks/quota_router.py` | Free-first routing for **search tools**: ordered pools, monthly quotas per key, automatic blocking of exhausted or dead keys. State in LiteLLM's own Postgres. |
+| `callbacks/quota_router.py` | Free-first routing for **search tools**: ordered pools, exhausted keys skipped until next month. The ladder logic of the Hermes `resilient-search` plugin, run once centrally. State in LiteLLM's own Postgres. |
 | `config/litellm.config.yaml` | Example config: one search tool per key, fallbacks, DB, callback. |
-| `config/quota_pools.yaml` | The pools: which keys are tried, in what order, with what monthly allowance. |
-| `scripts/gen_fallbacks.py` | Prints the `router_settings.fallbacks` block that matches your pools. |
+| `config/quota_pools.yaml` | The pools: which keys are tried, in what order. |
 | `tests/` | Unit tests for the routing logic and an end-to-end test (real LiteLLM + fake search backends). |
 
 ## Quick start
@@ -35,13 +34,16 @@ To reach it from other servers, put it behind a tunnel with access control; neve
 
 ## How routing works
 
-1. Every key is its own LiteLLM search tool with a **unique** name.
-2. `config/quota_pools.yaml` lists tools per pool, in priority order, with an optional `monthly` allowance.
-3. Clients call the pool name. The hook picks the first tool that still has quota and is not blocked, and counts the use.
-4. A quota error blocks the tool until the 1st of next month; a plain rate limit blocks it for 15 minutes; an invalid key for 6 hours (tunable with `QUOTA_RATE_COOLDOWN_S` and `QUOTA_AUTH_BLOCK_S`).
-5. If a call still fails, LiteLLM's `router_settings.fallbacks` move it to the next tool in the same request.
+This is the ladder of the Hermes `resilient-search` plugin, moved into one place:
 
-Why a hook at all? LiteLLM picks at random between search tools that share a name and has no quota notion for them. See `docs/FINDINGS.md` for the measurements.
+1. Every key is its own LiteLLM search tool with a **unique** name (`tavily-free-1`, `tavily-free-2`, `exa-paid`...).
+2. `config/quota_pools.yaml` lists the tools of a pool in ladder order, free first. Clients call the pool name.
+3. For each request the hook drops the tools already **exhausted this month**, sends the request to the first one left, and gives LiteLLM the rest as that request's fallbacks, in order. A failure moves on to the next tool within the same request.
+4. A tool is marked exhausted for the calendar month (UTC) when it fails with a quota/credit/rate-limit error: the message matches `usage limit | insufficient credit | 402 | 429 | rate limit exceed | quota exceed | out of credit`. A new month starts clean. There are no timers.
+5. Any other failure (timeout, 500, bad key) just moves on to the next tool and marks nothing.
+6. If every tool is exhausted, the last one still gets the request.
+
+LiteLLM alone picks randomly between search tools and cannot skip exhausted ones; see `docs/FINDINGS.md`.
 
 ## Usage and billing
 
@@ -50,8 +52,8 @@ With the database enabled (it is, in `docker-compose.yml`) LiteLLM records every
 | You want | Where |
 |---|---|
 | Spend and calls per **Hermes instance** | One virtual key per instance. `GET /key/info?key=...` (field `spend`), or the admin UI (Virtual Keys, Logs). |
-| Calls and spend per **upstream key** (free-1, free-2, paid) | Every call is tagged `search-tool:<tool>` and `search-pool:<pool>` by the hook. `GET /spend/tags`, or Usage by tag in the UI. Each row in `GET /spend/logs` also shows the tool as `model_group`. |
-| Free-tier allowance left per key | `callbacks/quota_router.py` keeps the monthly counters in Postgres (schema `quota_router`, table `usage`). LiteLLM itself does not show allowances. |
+| Calls and spend per **upstream key** (free-1, free-2, paid) | Each row in `GET /spend/logs` (and the Logs page in the UI) shows the tool that served the call as `model_group`. Calls per pool: `GET /spend/tags` (tag `search-pool:<pool>`). |
+| Which keys are exhausted this month, and how many calls each took | Postgres table `quota_router.usage` (`calls`, `exhausted`, `marked_at` per tool and month). |
 
 Caveats:
 
@@ -71,15 +73,15 @@ cp config/searxng/settings.yml.example config/searxng/settings.yml   # list your
 docker compose --profile keyless up -d
 ```
 
-Then add a tool and put it in a pool (it has no key and no monthly quota, so it works as an "unlimited" entry):
+Then add a tool and put it in a pool (it has no key, so it is never marked exhausted by quota):
 
 ```yaml
 # litellm.config.yaml
 search_tools:
   - search_tool_name: searxng-keyless
     litellm_params: {search_provider: searxng, api_base: "http://searxng:8080"}
-# quota_pools.yaml: put it after the free keys, before the paid one
-#   - {tool: searxng-keyless}
+# quota_pools.yaml: put it after the free keys, before the paid one, e.g.
+#   web: [tavily-free-1, searxng-keyless, exa-paid]
 ```
 
 **Different proxies for different engines.** Give an engine its own `network:` block with its own `proxies` list (see
@@ -102,10 +104,10 @@ quotas, fallbacks and auth like any other tool.
 
 ## Known limits
 
-- Usage is counted when a tool is picked. A request served by a *fallback* tool is not counted against that tool, so quotas can undercount slightly after failures.
-- Quotas are soft under heavy concurrency (a few extra calls can slip past the limit).
+- An empty result list is returned as is; the plugin treats it as a failure and tries the next backend, this does not.
 - Counting is not atomic across several LiteLLM replicas; run one instance.
 - LiteLLM has no page-extraction endpoint; extraction needs a separate service.
+- Only LiteLLM's built-in search providers are in the ladder. Other engines (SerpApi, Zyte...) come later as extra tools.
 
 ## Tests
 

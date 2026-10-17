@@ -1,8 +1,4 @@
 pools:
-  ordered:
-    - {tool: free-a, monthly: 5}
-    - {tool: free-b, monthly: 5}
-    - {tool: paid}
-  broken:
-    - {tool: bad}
-    - {tool: good}
+  ordered: [free-a, free-b, paid]
+  broken: [bad, good]
+  flaky: [flaky, good]

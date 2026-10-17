@@ -10,6 +10,7 @@ Measured with throwaway containers and fake search backends, not taken from docu
 | Fallback on an authentication error | Does not trigger (401 returned to the caller). Hence the router blocks dead keys itself. |
 | Budgets, priorities or quotas for search tools | None in the search code path. The cost calculator only prices queries per provider. |
 | Can a hook see and change search calls | **Yes.** `async_pre_call_hook` receives `call_type="asearch"` with `search_tool_name` and `query`, and rewriting `search_tool_name` changes which tool serves the call. |
+| Per-request fallback list (`fallbacks` set by the hook) for search | **Works**: the request falls through the given tools in order within the same call, and each failing attempt is reported with its own tool as `model_group` (verified in `tests/e2e`). This is what lets the ladder skip exhausted tools. |
 | Does the stock image support a database | Yes: Prisma and the schema are bundled; setting `DATABASE_URL` is enough. Virtual keys work. |
 | Providers built in | brave, dataforseo, duckduckgo, exa_ai, fastcrw, firecrawl, google_pse, linkup, parallel_ai, perplexity, searchapi, searxng, serper, tavily, you_com, apiserpent, tinyfish. No SerpApi, Zyte, Diffbot, ScrapingBee, Supadata or Scrape Creators. |
 | Extraction | No endpoint for it. |
@@ -29,5 +30,5 @@ Measured with throwaway containers and fake search backends, not taken from docu
 ## Not yet verified
 
 - Behaviour with real provider keys (everything above used fake backends).
-- How each real provider words its quota errors; `QUOTA_WORDS` in the router is a first guess.
+- How each provider words its quota errors; the router uses the plugin's patterns, proven for Tavily's and Parallel's real messages (Tavily verified live).
 - Spend reporting per virtual key for search calls with a database attached.

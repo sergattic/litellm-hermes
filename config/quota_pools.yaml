@@ -1,8 +1,4 @@
-# Pools: the name clients call (POST /v1/search/<pool>) -> real tools in priority order.
-# `monthly` is the free-tier allowance of that key; leave it out for paid/unlimited tools.
-# Counters reset on the 1st of each month (UTC). Tool names must match config/litellm.config.yaml.
+# Pools: the name clients call (POST /v1/search/<pool>) -> tools in ladder order, free first, paid last.
+# Tool names must match config/litellm.config.yaml. Same logic as the Hermes resilient-search plugin, run once centrally.
 pools:
-  web:
-    - {tool: tavily-free-1, monthly: 1000}
-    - {tool: tavily-free-2, monthly: 1000}
-    - {tool: exa-paid}
+  web: [tavily-free-1, tavily-free-2, exa-paid]
