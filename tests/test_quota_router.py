@@ -89,3 +89,13 @@ def test_hook_fails_open_when_the_database_is_unreachable(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://nobody:x@127.0.0.1:1/none")
     d = hook(r, {"search_tool_name": "web", "query": "x"})
     assert d["search_tool_name"] == "web"  # untouched: LiteLLM's own routing takes over
+
+
+def test_every_failed_attempt_is_logged_with_the_decision_and_the_message(capsys):
+    r = make()
+    class Boom(Exception): status_code = 400
+    for msg in ("This request exceeds this API key's set usage limit", "connection reset by peer"):
+        asyncio.run(r.async_log_failure_event({"standard_logging_object": {"model_group": "free-1"}, "exception": Boom(msg)}, None, None, None))
+    out = capsys.readouterr().out.splitlines()
+    assert "free-1 failed (status=400) -> marked exhausted for 2026-" in out[0] and "usage limit" in out[0]
+    assert "free-1 failed (status=400) -> moving on, not marked: connection reset by peer" in out[1]

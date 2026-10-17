@@ -140,7 +140,13 @@ class QuotaRouter(CustomLogger):
             if tool:
                 with self.state.lock:
                     self.state.record_call(tool, period(self.clock()))
-                self.record_failure(tool, str(kwargs.get("exception")))
+                exc = kwargs.get("exception")
+                marked = self.record_failure(tool, str(exc))
+                # One line per failed attempt, like the plugin: the decision, the HTTP status LiteLLM mapped it to, and the provider's message.
+                print("quota_router: %s failed (status=%s) -> %s: %s" % (
+                    tool, getattr(exc, "status_code", "?"),
+                    "marked exhausted for " + period(self.clock()) if marked else "moving on, not marked",
+                    str(exc).replace("\n", " ")[:400]), flush=True)
         except Exception as exc:  # noqa: BLE001
             print("quota_router: failure hook failed open: %r" % (exc,), flush=True)
 
