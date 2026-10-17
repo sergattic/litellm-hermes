@@ -1,0 +1,8 @@
+# Optional: let Hermes containers on an existing Docker network reach LiteLLM by name (http://litellm:4000).
+# Use with: docker compose -f docker-compose.yml -f docker-compose.hermes-net.example.yml up -d
+services:
+  litellm:
+    networks: [default, hermes-net]
+networks:
+  hermes-net:
+    external: true

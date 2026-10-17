@@ -1,0 +1,52 @@
+# LiteLLM gateway for a fleet of Hermes agents: one URL, one auth, many provider keys.
+# Portable: nothing here is host-specific. Secrets come from .env (see .env.example).
+services:
+  litellm-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_DB: litellm
+      POSTGRES_PASSWORD: ${LITELLM_DB_PASSWORD:?set LITELLM_DB_PASSWORD in .env}
+    volumes:
+      - litellm-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  litellm:
+    image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:v1.103.0}
+    restart: unless-stopped
+    depends_on:
+      litellm-db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://litellm:${LITELLM_DB_PASSWORD}@litellm-db:5432/litellm
+      QUOTA_POOLS_FILE: /app/quota_pools.yaml
+      QUOTA_DB: /data/quota.db
+      PYTHONPATH: /app/callbacks
+    volumes:
+      - ./config/litellm.config.yaml:/app/config.yaml:ro
+      - ./config/quota_pools.yaml:/app/quota_pools.yaml:ro
+      - ./callbacks:/app/callbacks:ro
+      - litellm-quota:/data
+    # Loopback only. Put it on a private Docker network or behind a tunnel to share it between hosts.
+    ports:
+      - "127.0.0.1:${LITELLM_PORT:-4000}:4000"
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  litellm-pgdata:
+  litellm-quota:

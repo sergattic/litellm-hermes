@@ -1,0 +1,13 @@
+general_settings: {master_key: sk-test}
+litellm_settings: {callbacks: quota_router.quota_router}
+search_tools:
+  - {search_tool_name: free-a, litellm_params: {search_provider: searxng, api_base: "http://fake:9001"}}
+  - {search_tool_name: free-b, litellm_params: {search_provider: searxng, api_base: "http://fake:9002"}}
+  - {search_tool_name: paid,   litellm_params: {search_provider: searxng, api_base: "http://fake:9004"}}
+  - {search_tool_name: bad,    litellm_params: {search_provider: searxng, api_base: "http://fake:9003"}}
+  - {search_tool_name: good,   litellm_params: {search_provider: searxng, api_base: "http://fake:9005"}}
+router_settings:
+  fallbacks:
+    - {free-a: [free-b, paid]}
+    - {free-b: [paid]}
+    - {bad: [good]}

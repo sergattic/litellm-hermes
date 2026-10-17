@@ -1,0 +1,8 @@
+# Pools: the name clients call (POST /v1/search/<pool>) -> real tools in priority order.
+# `monthly` is the free-tier allowance of that key; leave it out for paid/unlimited tools.
+# Counters reset on the 1st of each month (UTC). Tool names must match config/litellm.config.yaml.
+pools:
+  web:
+    - {tool: tavily-free-1, monthly: 1000}
+    - {tool: tavily-free-2, monthly: 1000}
+    - {tool: exa-paid}
