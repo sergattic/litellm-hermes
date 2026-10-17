@@ -29,6 +29,15 @@ Measured with throwaway containers and fake search backends, not taken from docu
 | Plain `http://` targets | Refused unless the engine sets `enable_http: true` (cost me an hour; real engines use https). |
 | Real keyless engines from a single datacenter address | Bing, Mojeek, Startpage and Yahoo answered; DuckDuckGo gave a CAPTCHA, Brave rate-limited (too many requests), Google and Qwant answered access denied. This is what rotating addresses is meant to improve (not tested with real rotating proxies). |
 
+## Providers (verified with real keys, 2026-10-17)
+
+| Provider | Result |
+|---|---|
+| tavily, parallel_ai, exa_ai, brave, perplexity, linkup, firecrawl | Work through `litellm.asearch` with a valid key. Tavily's quota error arrives as `BadRequestError` with status 432 and the text "exceeds this API key's set usage limit". |
+| jina_ai | **Not a search provider**: `'jina_ai' is not a valid SearchProviders` (the module in LiteLLM is for other features). A config naming it loads without error and fails at call time. |
+| duckduckgo (keyless) | Returns an empty result list, with no error, from a datacenter address (CAPTCHA). It is no floor there, and an empty list is not treated as a failure. |
+| Brave "Answers" API tokens | A different product; the search endpoint returned 0 results with them. |
+
 ## Not yet verified
 
 - Behaviour with real provider keys (everything above used fake backends).
