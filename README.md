@@ -43,6 +43,22 @@ To reach it from other servers, put it behind a tunnel with access control; neve
 
 Why a hook at all? LiteLLM picks at random between search tools that share a name and has no quota notion for them. See `docs/FINDINGS.md` for the measurements.
 
+## Usage and billing
+
+With the database enabled (it is, in `docker-compose.yml`) LiteLLM records every search call. Verified on v1.103.0:
+
+| You want | Where |
+|---|---|
+| Spend and calls per **Hermes instance** | One virtual key per instance. `GET /key/info?key=...` (field `spend`), or the admin UI (Virtual Keys, Logs). |
+| Calls and spend per **upstream key** (free-1, free-2, paid) | Every call is tagged `search-tool:<tool>` and `search-pool:<pool>` by the hook. `GET /spend/tags`, or Usage by tag in the UI. Each row in `GET /spend/logs` also shows the tool as `model_group`. |
+| Free-tier allowance left per key | `callbacks/quota_router.py` keeps the monthly counters in `/data/quota.db` (table `usage`). LiteLLM itself does not show allowances. |
+
+Caveats:
+
+- The cost LiteLLM shows is its **list price per query**, also for free-tier calls (for example Tavily 0.008, Exa 0.005 USD). Treat it as an estimate of what the traffic would cost, not as your invoice; real paid usage is the paid tool's tag.
+- The per-key group-by report (`/global/spend/report`) needs an enterprise licence. Tags and the key/log endpoints do not.
+- The raw request log lives in Postgres, so it can also be queried directly or exported.
+
 ## Adding a search engine LiteLLM does not support
 
 LiteLLM ships with about 17 search providers. For anything else, run a tiny service that speaks the

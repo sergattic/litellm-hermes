@@ -66,6 +66,7 @@ def test_hook_rewrites_only_known_pools():
     r = make()
     d = asyncio.run(r.async_pre_call_hook(None, None, {"search_tool_name": "web", "query": "x"}, "asearch"))
     assert d["search_tool_name"] == "free-1" and d["metadata"]["quota_tool"] == "free-1"
+    assert d["metadata"]["tags"] == ["search-tool:free-1", "search-pool:web"]
     d = asyncio.run(r.async_pre_call_hook(None, None, {"search_tool_name": "other"}, "asearch"))
     assert d["search_tool_name"] == "other"
     d = asyncio.run(r.async_pre_call_hook(None, None, {"search_tool_name": "web"}, "acompletion"))

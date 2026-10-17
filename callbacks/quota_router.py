@@ -142,6 +142,8 @@ class QuotaRouter(CustomLogger):
             data["search_tool_name"] = tool
             data.setdefault("metadata", {})["quota_pool"] = pool
             data["metadata"]["quota_tool"] = tool
+            # Tags make LiteLLM report calls and spend per upstream key: GET /spend/tags, or Usage -> Tags in the UI.
+            data["metadata"]["tags"] = list(data["metadata"].get("tags") or []) + ["search-tool:" + tool, "search-pool:" + pool]
         except Exception as exc:  # noqa: BLE001
             print("quota_router: pre-call hook failed open: %r" % (exc,), flush=True)
         return data
