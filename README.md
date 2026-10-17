@@ -66,3 +66,15 @@ tests/e2e/run.sh                  # needs Docker; starts and removes its own con
 ## License
 
 MIT
+
+## Upgrading LiteLLM
+
+The hook is a normal LiteLLM callback loaded from the config; nothing in LiteLLM is patched. It relies on:
+the callback interface (`CustomLogger.async_pre_call_hook` and the failure event), the search call type
+(`asearch`) with its `search_tool_name` field, and the router's search fallbacks. The search API is newer than
+the rest of LiteLLM, so check it on every upgrade:
+
+1. Pin the image (`LITELLM_IMAGE`, ideally with its `@sha256:` digest) and never follow a moving tag.
+2. Before bumping the pin, run `LITELLM_IMAGE=<new image> tests/e2e/run.sh` and the unit tests.
+3. If the hook breaks, it fails open: requests still work, with LiteLLM's own random choice between keys, and a
+   line `quota_router: ... failed open` appears in the container logs. Watch for that line after an upgrade.

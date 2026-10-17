@@ -130,15 +130,20 @@ class QuotaRouter(CustomLogger):
 
     # --- LiteLLM hooks -------------------------------------------------------------------------
     async def async_pre_call_hook(self, user_api_key_dict, cache, data, call_type):
-        if str(call_type) not in ("asearch", "search"):
-            return data
-        pool = data.get("search_tool_name") or data.get("model")
-        if pool not in self.pools:
-            return data
-        tool = self.pick(pool)
-        data["search_tool_name"] = tool
-        data.setdefault("metadata", {})["quota_pool"] = pool
-        data["metadata"]["quota_tool"] = tool
+        # Fail open: if anything here breaks (for example after a LiteLLM upgrade changes what a hook
+        # receives), the request goes through unchanged instead of failing.
+        try:
+            if str(call_type) not in ("asearch", "search"):
+                return data
+            pool = data.get("search_tool_name") or data.get("model")
+            if pool not in self.pools:
+                return data
+            tool = self.pick(pool)
+            data["search_tool_name"] = tool
+            data.setdefault("metadata", {})["quota_pool"] = pool
+            data["metadata"]["quota_tool"] = tool
+        except Exception as exc:  # noqa: BLE001
+            print("quota_router: pre-call hook failed open: %r" % (exc,), flush=True)
         return data
 
     def _tool_of(self, kwargs):
@@ -152,11 +157,14 @@ class QuotaRouter(CustomLogger):
         if DEBUG:
             with open("/tmp/quota_debug.log", "a") as f:
                 f.write("FAIL keys=%s tool=%s exc=%r\n" % (sorted(kwargs), self._tool_of(kwargs), kwargs.get("exception")))
-        tool = self._tool_of(kwargs)
-        if not tool:
-            return
-        exc = kwargs.get("exception")
-        self.record_failure(tool, getattr(exc, "status_code", None), str(exc))
+        try:
+            tool = self._tool_of(kwargs)
+            if not tool:
+                return
+            exc = kwargs.get("exception")
+            self.record_failure(tool, getattr(exc, "status_code", None), str(exc))
+        except Exception as exc:  # noqa: BLE001
+            print("quota_router: failure hook failed open: %r" % (exc,), flush=True)
 
     async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
         if DEBUG:

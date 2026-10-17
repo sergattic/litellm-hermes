@@ -83,3 +83,12 @@ def test_invalid_key_blocks_the_tool_for_hours_not_months():
 def test_forbidden_with_quota_wording_is_a_quota_block():
     r = make()
     assert r.record_failure("free-1", 403, "You exceeded your plan limit") == "quota"
+
+
+def test_hook_fails_open_when_state_is_broken():
+    import asyncio
+    r = make()
+    r.state = None  # simulate a broken store
+    d = asyncio.run(r.async_pre_call_hook(None, None, {"search_tool_name": "web", "query": "x"}, "asearch"))
+    assert d["search_tool_name"] == "web"  # untouched: LiteLLM's own routing takes over
+    asyncio.run(r.async_log_failure_event({"exception": RuntimeError("x"), "metadata": {"quota_tool": "free-1"}}, None, None, None))
