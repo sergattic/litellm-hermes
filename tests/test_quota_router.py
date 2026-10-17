@@ -15,8 +15,21 @@ class Clock:
         return self.now
 
 
+class MemState:
+    """In-memory stand-in for PgState, so the routing logic is tested without a database (the e2e test covers Postgres)."""
+
+    def __init__(self):
+        import threading
+        self.lock, self.u, self.b = threading.Lock(), {}, {}
+
+    def used(self, tool, month): return self.u.get((tool, month), 0)
+    def add(self, tool, month, n=1): self.u[(tool, month)] = max(0, self.u.get((tool, month), 0) + n)
+    def blocked_until(self, tool): return self.b.get(tool, 0)
+    def block(self, tool, until, reason): self.b[tool] = until
+
+
 def make(clock=None):
-    return q.QuotaRouter(pools=POOLS, state=q.QuotaState(":memory:"), clock=clock or Clock())
+    return q.QuotaRouter(pools=POOLS, state=MemState(), clock=clock or Clock())
 
 
 def test_free_first_in_order_then_paid():
@@ -89,7 +102,9 @@ def test_forbidden_with_quota_wording_is_a_quota_block():
 def test_hook_fails_open_when_state_is_broken():
     import asyncio
     r = make()
-    r.state = None  # simulate a broken store
+    r._state = None
+    q.DB_URL = "postgresql://nobody:x@127.0.0.1:1/none"  # unreachable: the lazy connect must fail open
     d = asyncio.run(r.async_pre_call_hook(None, None, {"search_tool_name": "web", "query": "x"}, "asearch"))
     assert d["search_tool_name"] == "web"  # untouched: LiteLLM's own routing takes over
     asyncio.run(r.async_log_failure_event({"exception": RuntimeError("x"), "metadata": {"quota_tool": "free-1"}}, None, None, None))
+

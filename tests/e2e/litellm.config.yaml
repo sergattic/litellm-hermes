@@ -1,4 +1,4 @@
-general_settings: {master_key: sk-test}
+general_settings: {master_key: sk-test, database_url: os.environ/DATABASE_URL, store_model_in_db: false}
 litellm_settings: {callbacks: quota_router.quota_router}
 search_tools:
   - {search_tool_name: free-a, litellm_params: {search_provider: searxng, api_base: "http://fake:9001"}}

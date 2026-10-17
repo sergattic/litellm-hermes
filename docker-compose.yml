@@ -26,13 +26,11 @@ services:
     environment:
       DATABASE_URL: postgresql://litellm:${LITELLM_DB_PASSWORD}@litellm-db:5432/litellm
       QUOTA_POOLS_FILE: /app/quota_pools.yaml
-      QUOTA_DB: /data/quota.db
       PYTHONPATH: /app/callbacks
     volumes:
       - ./config/litellm.config.yaml:/app/config.yaml:ro
       - ./config/quota_pools.yaml:/app/quota_pools.yaml:ro
       - ./callbacks:/app/callbacks:ro
-      - litellm-quota:/data
     # Loopback only. Put it on a private Docker network or behind a tunnel to share it between hosts.
     ports:
       - "127.0.0.1:${LITELLM_PORT:-4000}:4000"
@@ -64,4 +62,3 @@ services:
 
 volumes:
   litellm-pgdata:
-  litellm-quota:

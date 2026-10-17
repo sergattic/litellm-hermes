@@ -11,7 +11,7 @@ No secrets in this repo: keys live in `.env` (gitignored) and are referenced fro
 | Piece | What it does |
 |---|---|
 | `docker-compose.yml` | LiteLLM + its own Postgres (virtual keys, spend tracking). Binds to loopback; nothing host-specific. |
-| `callbacks/quota_router.py` | Free-first routing for **search tools**: ordered pools, monthly quotas per key, automatic blocking of exhausted or dead keys. SQLite state, no extra service. |
+| `callbacks/quota_router.py` | Free-first routing for **search tools**: ordered pools, monthly quotas per key, automatic blocking of exhausted or dead keys. State in LiteLLM's own Postgres. |
 | `config/litellm.config.yaml` | Example config: one search tool per key, fallbacks, DB, callback. |
 | `config/quota_pools.yaml` | The pools: which keys are tried, in what order, with what monthly allowance. |
 | `scripts/gen_fallbacks.py` | Prints the `router_settings.fallbacks` block that matches your pools. |
@@ -51,7 +51,7 @@ With the database enabled (it is, in `docker-compose.yml`) LiteLLM records every
 |---|---|
 | Spend and calls per **Hermes instance** | One virtual key per instance. `GET /key/info?key=...` (field `spend`), or the admin UI (Virtual Keys, Logs). |
 | Calls and spend per **upstream key** (free-1, free-2, paid) | Every call is tagged `search-tool:<tool>` and `search-pool:<pool>` by the hook. `GET /spend/tags`, or Usage by tag in the UI. Each row in `GET /spend/logs` also shows the tool as `model_group`. |
-| Free-tier allowance left per key | `callbacks/quota_router.py` keeps the monthly counters in `/data/quota.db` (table `usage`). LiteLLM itself does not show allowances. |
+| Free-tier allowance left per key | `callbacks/quota_router.py` keeps the monthly counters in Postgres (schema `quota_router`, table `usage`). LiteLLM itself does not show allowances. |
 
 Caveats:
 
@@ -104,7 +104,7 @@ quotas, fallbacks and auth like any other tool.
 
 - Usage is counted when a tool is picked. A request served by a *fallback* tool is not counted against that tool, so quotas can undercount slightly after failures.
 - Quotas are soft under heavy concurrency (a few extra calls can slip past the limit).
-- One LiteLLM instance only: the quota state is a local SQLite file.
+- Counting is not atomic across several LiteLLM replicas; run one instance.
 - LiteLLM has no page-extraction endpoint; extraction needs a separate service.
 
 ## Tests

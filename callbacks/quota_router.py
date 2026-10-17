@@ -10,10 +10,10 @@ quotas (checked on v1.103.0). This hook adds it:
 * A tool that answers with a quota/rate error is blocked (until the next month for quota errors,
   for a short cooldown for plain rate limits) and the router's fallbacks move the request on.
 
-State lives in a small SQLite file (QUOTA_DB), so no extra service is needed.
+State lives in the Postgres LiteLLM already uses (DATABASE_URL), in its own schema `quota_router`: backed up with the database,
+survives container recreation, nothing else to run.
 """
 import os
-import sqlite3
 import threading
 import time
 from datetime import datetime, timezone
@@ -24,16 +24,21 @@ except ImportError:  # pragma: no cover
     yaml = None
 
 try:
+    import psycopg
+except ImportError:  # pragma: no cover - psycopg ships in the LiteLLM image
+    psycopg = None
+
+try:
     from litellm.integrations.custom_logger import CustomLogger
 except ImportError:  # unit tests stub this
     class CustomLogger:  # type: ignore
         pass
 
 POOLS_FILE = os.environ.get("QUOTA_POOLS_FILE", "/app/quota_pools.yaml")
-DB_PATH = os.environ.get("QUOTA_DB", "/data/quota.db")
+DB_URL = os.environ.get("DATABASE_URL")
+SCHEMA = "quota_router"
 RATE_COOLDOWN_S = int(os.environ.get("QUOTA_RATE_COOLDOWN_S", "900"))
 AUTH_BLOCK_S = int(os.environ.get("QUOTA_AUTH_BLOCK_S", "21600"))
-DEBUG = os.environ.get("QUOTA_DEBUG") == "1"
 QUOTA_WORDS = ("quota", "exhaust", "out of searches", "out of credits", "insufficient", "credit", "plan limit",
                "usage limit", "payment required", "exceeded your")
 
@@ -61,33 +66,48 @@ def classify_failure(status, message, now):
     return "other", None
 
 
-class QuotaState:
-    def __init__(self, path):
-        if path != ":memory:":
-            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+class PgState:
+    """Quota state: tables live in their own schema inside LiteLLM's database."""
+
+    def __init__(self, url, schema=SCHEMA):
+        if psycopg is None:
+            raise RuntimeError("psycopg is not installed")
+        # LiteLLM adds Prisma-only options (connection_limit, pool_timeout...) to DATABASE_URL; psycopg rejects them.
+        self.url, self.schema = url.split("?")[0], schema
         self.lock = threading.Lock()
-        self.db = sqlite3.connect(path, check_same_thread=False)
-        self.db.execute("CREATE TABLE IF NOT EXISTS usage(tool TEXT, month TEXT, used INTEGER, PRIMARY KEY(tool, month))")
-        self.db.execute("CREATE TABLE IF NOT EXISTS blocked(tool TEXT PRIMARY KEY, until REAL, reason TEXT)")
-        self.db.commit()
+        self.conn = None
+        self._exec("CREATE SCHEMA IF NOT EXISTS %s" % schema)
+        self._exec("CREATE TABLE IF NOT EXISTS %s.usage(tool text, month text, used integer NOT NULL, PRIMARY KEY(tool, month))" % schema)
+        self._exec("CREATE TABLE IF NOT EXISTS %s.blocked(tool text PRIMARY KEY, until double precision NOT NULL, reason text)" % schema)
+
+    def _exec(self, sql, params=()):
+        for attempt in (0, 1):  # one reconnect if the database restarted
+            try:
+                if self.conn is None or self.conn.closed:
+                    self.conn = psycopg.connect(self.url, autocommit=True, connect_timeout=5)
+                cur = self.conn.execute(sql, params)
+                return cur.fetchone() if cur.description else None
+            except psycopg.OperationalError:
+                self.conn = None
+                if attempt:
+                    raise
 
     def used(self, tool, month):
-        row = self.db.execute("SELECT used FROM usage WHERE tool=? AND month=?", (tool, month)).fetchone()
+        row = self._exec("SELECT used FROM %s.usage WHERE tool=%%s AND month=%%s" % self.schema, (tool, month))
         return row[0] if row else 0
 
     def add(self, tool, month, n=1):
-        self.db.execute("INSERT INTO usage(tool,month,used) VALUES(?,?,?) ON CONFLICT(tool,month) DO UPDATE SET used=MAX(0,used+?)",
-                        (tool, month, max(0, n), n))
-        self.db.commit()
+        self._exec("INSERT INTO %s.usage(tool,month,used) VALUES(%%s,%%s,%%s) "
+                   "ON CONFLICT(tool,month) DO UPDATE SET used=GREATEST(0, %s.usage.used+%%s)" % (self.schema, self.schema),
+                   (tool, month, max(0, n), n))
 
     def blocked_until(self, tool):
-        row = self.db.execute("SELECT until FROM blocked WHERE tool=?", (tool,)).fetchone()
+        row = self._exec("SELECT until FROM %s.blocked WHERE tool=%%s" % self.schema, (tool,))
         return row[0] if row else 0
 
     def block(self, tool, until, reason):
-        self.db.execute("INSERT INTO blocked(tool,until,reason) VALUES(?,?,?) ON CONFLICT(tool) DO UPDATE SET until=?, reason=?",
-                        (tool, until, reason, until, reason))
-        self.db.commit()
+        self._exec("INSERT INTO %s.blocked(tool,until,reason) VALUES(%%s,%%s,%%s) "
+                   "ON CONFLICT(tool) DO UPDATE SET until=EXCLUDED.until, reason=EXCLUDED.reason" % self.schema, (tool, until, reason))
 
 
 def load_pools(path):
@@ -100,8 +120,15 @@ def load_pools(path):
 class QuotaRouter(CustomLogger):
     def __init__(self, pools=None, state=None, clock=None):
         self.pools = pools if pools is not None else load_pools(POOLS_FILE)
-        self.state = state or QuotaState(DB_PATH)
+        self._state = state
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+
+    @property
+    def state(self):
+        # Connected on first use, so LiteLLM starts even if the database is briefly down; hooks fail open until it is back.
+        if self._state is None:
+            self._state = PgState(DB_URL)
+        return self._state
 
     def pick(self, pool):
         """Choose the first usable tool of a pool and count one use against it."""
@@ -156,9 +183,6 @@ class QuotaRouter(CustomLogger):
         return None
 
     async def async_log_failure_event(self, kwargs, response_obj, start_time, end_time):
-        if DEBUG:
-            with open("/tmp/quota_debug.log", "a") as f:
-                f.write("FAIL keys=%s tool=%s exc=%r\n" % (sorted(kwargs), self._tool_of(kwargs), kwargs.get("exception")))
         try:
             tool = self._tool_of(kwargs)
             if not tool:
@@ -167,12 +191,6 @@ class QuotaRouter(CustomLogger):
             self.record_failure(tool, getattr(exc, "status_code", None), str(exc))
         except Exception as exc:  # noqa: BLE001
             print("quota_router: failure hook failed open: %r" % (exc,), flush=True)
-
-    async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
-        if DEBUG:
-            lp = kwargs.get("litellm_params") or {}
-            with open("/tmp/quota_debug.log", "a") as f:
-                f.write("OK keys=%s model=%s tool=%s lp_keys=%s\n" % (sorted(kwargs), kwargs.get("model"), self._tool_of(kwargs), sorted(lp)))
 
 
 quota_router = QuotaRouter() if os.environ.get("QUOTA_AUTOLOAD", "1") == "1" else None

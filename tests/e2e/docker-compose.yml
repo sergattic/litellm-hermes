@@ -3,12 +3,16 @@ services:
     image: python:3.12-slim
     command: python /fake_backends.py
     volumes: [./fake_backends.py:/fake_backends.py:ro]
+  db:
+    image: postgres:16-alpine
+    environment: {POSTGRES_USER: l, POSTGRES_DB: l, POSTGRES_PASSWORD: pw}
+    healthcheck: {test: ["CMD-SHELL", "pg_isready -U l -d l"], interval: 5s, retries: 10}
   litellm:
+    depends_on: {db: {condition: service_healthy}}
     image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:v1.103.0}
     environment:
       QUOTA_POOLS_FILE: /app/quota_pools.yaml
-      QUOTA_DB: /tmp/quota.db
-      QUOTA_DEBUG: "1"
+      DATABASE_URL: postgresql://l:pw@db:5432/l   # quota state goes to Postgres (schema quota_router)
       PYTHONPATH: /app/callbacks
     volumes:
       - ./litellm.config.yaml:/app/config.yaml:ro
